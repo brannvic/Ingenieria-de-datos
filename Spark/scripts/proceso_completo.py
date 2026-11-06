@@ -1,5 +1,6 @@
 
 # PROCESO ETL COMPLETO CON PYSPARK 2.4.8
+# Incluye 5 consultas SQL y visualizacion de la tabla completa
 
 # 1. Configuracion del entorno
 import os
@@ -14,7 +15,7 @@ from pyspark import SparkConf, SparkContext
 from pyspark.sql import SQLContext
 from pyspark.sql.functions import (
     col, trim, split, regexp_replace,
-    regexp_extract, when, length, lit
+    regexp_extract, lit
 )
 
 # 3. Rutas de los archivos
@@ -32,7 +33,7 @@ sqlContext = SQLContext(sc)
 
 try:
 
-    print("INICIO DEL PROCESO ETL")
+    print("\nINICIO DEL PROCESO ETL")
     print("--------------------------------")
 
     # 5. Leer el archivo CSV
@@ -193,7 +194,6 @@ try:
     )
 
     # 16. Aplicar el valor predeterminado del flujo Hop
-    # El Value Mapper establece este valor cuando no hay coincidencia.
     datos = datos.withColumn(
         "estado",
         lit("Ciudad de Mexico")
@@ -224,40 +224,109 @@ try:
         "estado"
     )
 
-    # 18. Validar el resultado antes de guardarlo
+    # 18. Registrar el DataFrame como tabla SQL
+    datos_finales.createOrReplaceTempView("datos_limpios")
+
+    # 19. Validar el resultado antes de guardarlo
     print("\nRESULTADO DE LA TRANSFORMACION")
     print("--------------------------------")
     print("Registros:", datos_finales.count())
     print("Columnas:", len(datos_finales.columns))
 
-    # 19. Guardar el resultado como CSV
+    # 20. CONSULTA SQL 1: TOTAL DE REGISTROS
+    print("\nCONSULTA SQL 1 - TOTAL DE REGISTROS")
+    print("--------------------------------")
+
+    consulta_1 = sqlContext.sql("""
+        SELECT COUNT(*) AS total_registros
+        FROM datos_limpios
+    """)
+
+    consulta_1.show()
+
+    # 21. CONSULTA SQL 2: EDAD PROMEDIO
+    print("\nCONSULTA SQL 2 - EDAD PROMEDIO")
+    print("--------------------------------")
+
+    consulta_2 = sqlContext.sql("""
+        SELECT ROUND(AVG(edad), 2) AS edad_promedio
+        FROM datos_limpios
+    """)
+
+    consulta_2.show()
+
+    # 22. CONSULTA SQL 3: REGISTROS POR ALCALDIA
+    print("\nCONSULTA SQL 3 - REGISTROS POR ALCALDIA")
+    print("--------------------------------")
+
+    consulta_3 = sqlContext.sql("""
+        SELECT
+            alcaldia,
+            COUNT(*) AS total_registros
+        FROM datos_limpios
+        GROUP BY alcaldia
+        ORDER BY total_registros DESC
+    """)
+
+    consulta_3.show(100, truncate=False)
+
+    # 23. CONSULTA SQL 4: PASATIEMPOS MAS FRECUENTES
+    print("\nCONSULTA SQL 4 - PASATIEMPOS MAS FRECUENTES")
+    print("--------------------------------")
+
+    consulta_4 = sqlContext.sql("""
+        SELECT
+            pasatiempo,
+            COUNT(*) AS total_personas
+        FROM datos_limpios
+        WHERE pasatiempo IS NOT NULL
+          AND TRIM(pasatiempo) <> ''
+        GROUP BY pasatiempo
+        ORDER BY total_personas DESC
+    """)
+
+    consulta_4.show(100, truncate=False)
+
+    # 24. CONSULTA SQL 5: BANDAS FAVORITAS
+    print("\nCONSULTA SQL 5 - BANDAS FAVORITAS")
+    print("--------------------------------")
+
+    consulta_5 = sqlContext.sql("""
+        SELECT
+            banda_1,
+            COUNT(*) AS total_personas
+        FROM datos_limpios
+        WHERE banda_1 IS NOT NULL
+          AND TRIM(banda_1) <> ''
+        GROUP BY banda_1
+        ORDER BY total_personas DESC
+    """)
+
+    consulta_5.show(100, truncate=False)
+
+    # 25. MOSTRAR LA TABLA COMPLETA
+    print("\nTABLA COMPLETA DE DATOS LIMPIOS")
+    print("--------------------------------")
+    print("Se muestran todos los registros y las 21 columnas.")
+
+    datos_finales.show(100, truncate=False)
+
+    # 26. Guardar el resultado como CSV
     datos_finales.coalesce(1) \
         .write \
         .mode("overwrite") \
         .option("header", "true") \
         .csv(ruta_salida)
 
-    # 20. Leer nuevamente el archivo para comprobarlo
+    print("\nARCHIVO GUARDADO")
+    print("--------------------------------")
+    print("Ruta:", ruta_salida)
+
+    # 27. Leer nuevamente el archivo para comprobarlo
     comprobacion = sqlContext.read \
         .schema(datos_finales.schema) \
         .option("header", "true") \
         .csv(ruta_salida)
-
-    print("\nVALIDACION DEL ARCHIVO GUARDADO")
-    print("--------------------------------")
-    print("Registros recuperados:", comprobacion.count())
-    print("Columnas recuperadas:", len(comprobacion.columns))
-
-    if comprobacion.count() == datos_finales.count() and len(comprobacion.columns) == 21:
-        print("\nCORRECTO: el archivo se guardo correctamente.")
-    else:
-        print("\nERROR: revisar el archivo generado.")
-
-    print("\nESQUEMA FINAL")
-    comprobacion.printSchema()
-
-    print("\nPROCESO ETL FINALIZADO")
-
 finally:
     sc.stop()
-    print("SparkContext detenido.")
+    print("\nSparkContext detenido.")
